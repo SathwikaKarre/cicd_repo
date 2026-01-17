@@ -1,0 +1,81 @@
+pipeline {
+agent any
+// Specify the maven installation to use for this pipeline.
+// 'maven3' refers to a Maven installation configured in Jenkins.
+tools {
+maven 'maven3'
+}
+stages {
+stage('Checkout') {
+steps {
+echo 'Cloning GIT HUB Repo'
+// Clone the specified branch from the GitHub repository
+git branch: 'main', url: 'https://github.com/SathwikaKarre/cicd_repo.git'
+}
+}
+stage('SonarQube Scan') {
+steps {
+echo 'Scanning project'
+// List directory contents for debugging purposes
+sh 'ls -ltr'
+// Run SonarQube scan with specified SonarQube server and login token
+sh ''' mvn sonar:sonar \\
+-Dsonar.host.url=http://43.205.143.46:9000 \\
+-Dsonar.login=squ_38127028c8b9793ff7a2935b4107decf9f68af31'''
+}
+}
+stage('Build Artifact') {
+steps {
+echo 'Build Artifact'
+// Clean and package the project using Maven
+sh 'mvn clean package'
+}
+}
+stage('Build Docker Image') {
+steps {
+echo 'Build Docker Image'
+// Build the Docker image using the Dockerfile in the project
+// Tag the image with the current build number
+sh 'docker build -t 81849848/devops123:${BUILD_NUMBER} .'
+}
+}
+stage('Push to Docker Hub') {
+steps {
+script {
+// Use Dockerhub credentials to access Docker Hub
+withCredentials([string(credentialsId: 'dockerhub', variable: 'dockerhub')]) {
+sh 'docker login -u 81849848 -p ${dockerhub}'
+}
+// Push the Docker image to Docker Hub
+sh 'docker push 81849848/devops123:${BUILD_NUMBER}'
+echo 'Pushed to Docker Hub'
+}
+}
+}
+stage('Update Deployment File') {
+environment {
+GIT_REPO_NAME = "cicd_repo"
+GIT_USER_NAME = "SathwikaKarre"
+}
+steps {
+echo 'Update Deployment File'
+// Use Githubtoken to access GitHub
+withCredentials([string(credentialsId: 'githubtoken', variable: 'githubtoken')]) {
+sh '''
+
+git config user.email "sathwikakarre.tech@gmail.com"
+git config user.name "SathwikaKarre"
+# Replace the tag in the deployment YAML file with the current build number
+sed -i "s/devops123:.*/devops123:${BUILD_NUMBER}/g" deploymentfiles/deployment.yml
+
+git add deploymentfiles/deployment.yml
+
+git commit -m "Update deployment image to version ${BUILD_NUMBER}"
+
+git push --set-upstream https://${githubtoken}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME}.git main
+'''
+}
+}
+}
+}
+}
